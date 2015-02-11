@@ -63,12 +63,24 @@ runBFS bfs@(BFS children g v bs)
 			then runBFS (bfsStep bfs)
 			else head k
 
-data Player = Player {wallCount :: Int, coords :: Coord, goals :: States}
-	deriving(Show)
+{-||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||-}
+coordToInt :: Coord -> Int
+coordToInt (x, y) = (x-1) + (y-1) * 9
 
-data Board = Board {boardEdges :: EdgeTree, players :: [Player], allowedWalls :: Set.Set Wall}
-	deriving (Show)
+intToCoord :: Int -> Coord
+intToCoord a = (a `mod` 9, a `div` 9)
 
+constructGraph :: EdgeTree -> Graph.Graph
+constructGraph e = Graph.buildG (0, 81) $ concat $ map expandSet $ Map.toList $ e where
+	expandSet (k, v) = let z = Set.toList v in
+		[(coordToInt k, coordToInt e) | e <- z] ++ [(coordToInt e, coordToInt k) | e <- z]
+
+goalsStillReachable :: Board -> Bool
+goalsStillReachable (Board e p _) = let gr = constructGraph e in and $ map (reachableGoals gr) p where
+	reachableGoals graph (Player _ c g) = let r = Graph.reachable graph (coordToInt c) in
+		Set.null $ Set.intersection (Set.fromList (map intToCoord r)) g
+
+{-||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||-}
 newBoard pCoords = Board (convertToMap startingEdges) players allowableWalls where
 	convertToMap = foldl' addToSet Map.empty where
 		addToSet set (src, dest) = Map.alter addIn src set where
@@ -175,7 +187,7 @@ findWallableAlongPath board@(Board _ _ walls) branch =
 						| a `getDirTo` b == DOWN = Wall b H
 						| a `getDirTo` b == LEFT = Wall a V
 						| a `getDirTo` b == RIGHT = Wall b V
-					canPlaceWall wall walls = Set.member wall walls
+					canPlaceWall wall walls = Set.member wall walls -- && goalsStillReachable (addWall board wall)
 
 takeTurn :: Int -> Board -> IO ()
 takeTurn myId board = do
