@@ -25,12 +25,19 @@ type Branch = [Coord]
 type States = Set.Set Coord
 type EdgeTree = Map.Map Coord (Set.Set Coord)
 
-data BFS = BFS {children :: (Coord -> States), searchGoals :: States, visited :: States, branches :: [Branch]}
-
 data Orientation = H | V
 	deriving (Show, Read, Eq, Ord)
 data Wall = Wall Coord Orientation
 	deriving (Show, Eq, Ord)
+
+data Player = Player {wallCount :: Int, coords :: Coord, goals :: States}
+	deriving(Show)
+
+data Board = Board {boardEdges :: EdgeTree, players :: [Player], allowedWalls :: Set.Set Wall}
+	deriving (Show)
+
+{-||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||-}
+data BFS = BFS {children :: (Coord -> States), searchGoals :: States, visited :: States, branches :: [Branch]}
 
 appendLeafs :: States -> Branch -> [Branch]
 appendLeafs s b = Set.foldl' (\x y -> (y:b):x) [] s
@@ -72,7 +79,9 @@ newBoard pCoords = Board (convertToMap startingEdges) players allowableWalls whe
 		rightEdges = [((x, y), (x+1, y)) | x<-[1..9], y<-[1..9], x < 9]
 		upEdges = [((x, y), (x, y-1)) | x<-[1..9], y<-[1..9], y > 1]
 		downEdges = [((x, y), (x, y+1)) | x<-[1..9], y<-[1..9], y < 9]
-	allowableWalls = Set.fromList $ concat [[Wall (x, y) V, Wall (x, y) H]| x<-[1..8], y<-[1..8]]
+	allowableWalls = Set.fromList $ verticalWalls ++ horizontalWalls where
+		verticalWalls = [Wall (x, y) V | x <- [2..9], y <- [1..8]]
+		horizontalWalls = [Wall (x, y) H | x <- [1..8], y <- [2..9]]
 	players = map makePlayer (zip [0..] pCoords) where
 		makePlayer (id, coord) = Player 10 coord (Set.fromList $ playerGoals id) where
 			playerGoals 0 = [(9, y) | y<-[1..9]]
@@ -122,7 +131,7 @@ playerLine player str =
 runBoardBFS :: Int -> Board -> Branch
 runBoardBFS myId (Board e p _) =
 	reverse $ runBFS $ BFS (getChildren e) (goals (p !! myId)) Set.empty [[coords $ p !! myId]] where
-		getChildren e c = let k = Map.lookup c e in checkIn k where
+		getChildren e c = checkIn (Map.lookup c e) where
 			checkIn Nothing = Set.empty
 			checkIn (Just a) = a
 
