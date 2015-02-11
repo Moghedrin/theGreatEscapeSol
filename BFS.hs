@@ -81,23 +81,17 @@ newBoard pCoords = Board (convertToMap startingEdges) players allowableWalls whe
 
 addWall :: Board -> Wall -> Board
 addWall (Board e p walls) w@(Wall c o) =
-	Board (if' (addVertical c e) (addHorizontal c e) (o == V)) p (trimPoss walls w) where
+	Board (if' (addVertical c e) (addHorizontal c e) (o == V)) p (trimPoss w walls) where
 		addVertical c = (addVert c) . (addVert (moveDir DOWN c)) where
 			addVert c = removeEdgeBetween c (moveDir LEFT c)
 		addHorizontal c = (addHorz c) . (addHorz (moveDir RIGHT c)) where
 			addHorz c = removeEdgeBetween c (moveDir UP c)
-		removeEdgeBetween a b e =
-			let e' = Map.update (return . Set.delete b) a e in Map.update (return . Set.delete a) b e'
-		trimPoss ws w@(Wall c V) =
-			let ws' = Set.delete w walls;
-				ws'' = Set.delete (Wall (moveDir DOWN c) V) ws';
-				ws''' = Set.delete (Wall (moveDir UP c) V) ws'' in
-					Set.delete (findCross w) ws'''
-		trimPoss ws w@(Wall c H) =
-			let ws' = Set.delete w walls;
-				ws'' = Set.delete (Wall (moveDir RIGHT c) H) ws';
-				ws''' = Set.delete (Wall (moveDir LEFT c) H) ws'' in
-					Set.delete (findCross w) ws'''
+		removeEdgeBetween a b =
+			Map.update (return . Set.delete b) a . Map.update (return . Set.delete a) b
+		trimPoss w@(Wall c V) = Set.delete w . Set.delete (Wall (moveDir DOWN c) V)
+			. Set.delete (Wall (moveDir UP c) V) . Set.delete (findCross w)
+		trimPoss w@(Wall c H) = Set.delete w . Set.delete (Wall (moveDir RIGHT c) H)
+			. Set.delete (Wall (moveDir LEFT c) H) . Set.delete (findCross w)
 		findCross (Wall c V) = Wall (moveDir DOWN . moveDir LEFT $ c) H
 		findCross (Wall c H) = Wall (moveDir UP . moveDir RIGHT $ c) H
 
