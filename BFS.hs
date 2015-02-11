@@ -164,10 +164,11 @@ getDirTo (x1, y1) (x2, y2)
 	| otherwise = undefined
 
 losing :: Int -> [(Int, Branch)] -> Bool
-losing myId branches = let k = minimumBy (comparing $ rank myId) branches in fst k /= myId where
+losing myId branches = let winningPlayer = fst . findWinning $ branches in winningPlayer /= myId where
+	findWinning (b:bs) = foldl' (\a b -> if' a b (rank myId a < rank myId b)) b bs
 
 rank :: Int -> (Int, Branch) -> Int
-rank myId (id, b) = length b + id
+rank myId (id, b) = length b
 
 -- #TODO Disallow walls which would block the path of a player
 -- Use Data.Graph.bcc to check this. Edges existing in Forest are fine to delete.
