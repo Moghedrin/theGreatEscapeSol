@@ -68,17 +68,22 @@ coordToInt :: Coord -> Int
 coordToInt (x, y) = (x-1) + (y-1) * 9
 
 intToCoord :: Int -> Coord
-intToCoord a = (a `mod` 9, a `div` 9)
+intToCoord a = ((a `mod` 9) + 1, (a `div` 9) + 1)
 
 constructGraph :: EdgeTree -> Graph.Graph
 constructGraph e = Graph.buildG (0, 81) $ concat $ map expandSet $ Map.toList $ e where
 	expandSet (k, v) = let z = Set.toList v in
 		[(coordToInt k, coordToInt e) | e <- z] ++ [(coordToInt e, coordToInt k) | e <- z]
 
+vertexListToSet :: [Graph.Vertex] -> States
+vertexListToSet = Set.fromList . map intToCoord
+
+getReachableStates :: Graph.Graph -> Coord -> States
+getReachableStates graph c = vertexListToSet $ Graph.reachable graph (coordToInt c)
+
 goalsStillReachable :: Board -> Bool
-goalsStillReachable (Board e p _) = let gr = constructGraph e in and $ map (reachableGoals gr) p where
-	reachableGoals graph (Player _ c g) = let r = Graph.reachable graph (coordToInt c) in
-		Set.null $ Set.intersection (Set.fromList (map intToCoord r)) g
+goalsStillReachable (Board e p _) = and $ map (reachableGoals (constructGraph e)) p where
+	reachableGoals graph (Player _ c g) = not . Set.null . Set.intersection (getReachableStates graph c) $ g
 
 {-||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||-}
 newBoard pCoords = Board (convertToMap startingEdges) players allowableWalls where
@@ -187,7 +192,7 @@ findWallableAlongPath board@(Board _ _ walls) branch =
 						| a `getDirTo` b == DOWN = Wall b H
 						| a `getDirTo` b == LEFT = Wall a V
 						| a `getDirTo` b == RIGHT = Wall b V
-					canPlaceWall wall walls = Set.member wall walls -- && goalsStillReachable (addWall board wall)
+					canPlaceWall wall walls = Set.member wall walls && goalsStillReachable (addWall board wall)
 
 takeTurn :: Int -> Board -> IO ()
 takeTurn myId board = do
