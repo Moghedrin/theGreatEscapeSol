@@ -71,7 +71,7 @@ intToCoord :: Int -> Coord
 intToCoord a = ((a `mod` 9) + 1, (a `div` 9) + 1)
 
 constructGraph :: EdgeTree -> Graph.Graph
-constructGraph e = Graph.buildG (0, 81) $ concat $ map expandSet $ Map.toList $ e where
+constructGraph e = Graph.buildG (-100, 100) $ concat $ map expandSet $ Map.toList $ e where
 	expandSet (k, v) = let z = Set.toList v in
 		[(coordToInt k, coordToInt e) | e <- z] ++ [(coordToInt e, coordToInt k) | e <- z]
 
@@ -201,8 +201,7 @@ takeTurn myId board = do
 	let shortestPaths = findAllShortest board'
 	let move = head . tail . fromJust $ lookup myId shortestPaths
 	let me = p' !! myId
-	if losing myId shortestPaths && length shortestPaths == 2 && wallCount me > 0
-	--if losing myId shortestPaths && wallCount me > 0
+	if losing myId shortestPaths && wallCount me > 0
 		then placeWall myId board' shortestPaths me move
 		else putStrLn . show $ coords me `getDirTo` move
 	where
