@@ -119,7 +119,7 @@ addWall (Board e p walls) w@(Wall c o) =
 		trimPoss w@(Wall c H) = Set.delete w . Set.delete (Wall (moveDir RIGHT c) H)
 			. Set.delete (Wall (moveDir LEFT c) H) . Set.delete (findCross w)
 		findCross (Wall c V) = Wall (moveDir DOWN . moveDir LEFT $ c) H
-		findCross (Wall c H) = Wall (moveDir UP . moveDir RIGHT $ c) H
+		findCross (Wall c H) = Wall (moveDir UP . moveDir RIGHT $ c) V
 
 initialize :: IO (Int, Int, Int, Int)
 initialize = do
@@ -204,6 +204,8 @@ getBestWall b mid l ws = let first = head ws in
 	foldl' evaluateWall (rankWall b mid l first, first) ws where
 		evaluateWall p@(maxScore, _) wall = let score = rankWall b mid l wall in
 			if' (score, wall) p (score >= maxScore)
+
+-- #TODO Fix issue where if a player dies in 3 player, the agent no longer places walls if it's behind
 
 takeTurn :: Int -> Board -> IO ()
 takeTurn myId board = do
