@@ -226,7 +226,7 @@ takeTurn myId board = do
 					let (r, (Wall c o)) = getBestWall b myId sp k
 					let (x, y) = moveDir UP . moveDir LEFT $ c
 					hPutStrLn stderr $ "Rank for next move: " ++ (show r)
-					if r > if' 0 2 (length (players board) <= 2)
+					if r > if' 0 1 (length (players board) <= 2)
 						then printf "%d %d %s %s\n" x y (show o) "Die!"
 						else putStrLn . show $ coords me `getDirTo` move
 
