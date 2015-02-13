@@ -33,7 +33,7 @@ data Wall = Wall Coord Orientation
 data Player = Player {wallCount :: Int, coords :: Coord, goals :: States}
 	deriving(Show)
 
-data Board = Board {boardEdges :: EdgeTree, players :: [Player], allowedWalls :: Set.Set Wall}
+data Board = Board {boardEdges :: EdgeTree, players :: [Player], allowedWalls :: Set.Set Wall, turn :: Int}
 	deriving (Show)
 
 {-||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||-}
@@ -82,11 +82,11 @@ getReachableStates :: Graph.Graph -> Coord -> States
 getReachableStates graph c = vertexListToSet $ Graph.reachable graph (coordToInt c)
 
 goalsStillReachable :: Board -> Bool
-goalsStillReachable (Board e p _) = and $ map (reachableGoals (constructGraph e)) p where
+goalsStillReachable (Board e p _ _) = and $ map (reachableGoals (constructGraph e)) p where
 	reachableGoals graph (Player _ c g) = not . Set.null . Set.intersection (getReachableStates graph c) $ g
 
 {-||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||-}
-newBoard pCoords = Board (convertToMap startingEdges) players allowableWalls where
+newBoard pCoords = Board (convertToMap startingEdges) players allowableWalls 0 where
 	convertToMap = foldl' addToSet Map.empty where
 		addToSet set (src, dest) = Map.alter addIn src set where
 			addIn Nothing = Just . Set.singleton $ dest
@@ -106,8 +106,8 @@ newBoard pCoords = Board (convertToMap startingEdges) players allowableWalls whe
 			playerGoals 2 = [(x, 9) | x<-[1..9]]
 
 addWall :: Board -> Wall -> Board
-addWall (Board e p walls) w@(Wall c o) =
-	Board (if' (addVertical c e) (addHorizontal c e) (o == V)) p (trimPoss w walls) where
+addWall (Board e p walls t) w@(Wall c o) =
+	Board (if' (addVertical c e) (addHorizontal c e) (o == V)) p (trimPoss w walls) t where
 		addVertical c = (addVert c) . (addVert (moveDir DOWN c)) where
 			addVert c = removeEdgeBetween c (moveDir LEFT c)
 		addHorizontal c = (addHorz c) . (addHorz (moveDir RIGHT c)) where
@@ -131,11 +131,11 @@ initialize = do
 	return (width, height, playerCount, myId)
 
 turnInput :: Board -> IO Board
-turnInput b@(Board e p _) = do
+turnInput b@(Board e p _ t) = do
 	players' <- flip mapM p $ \player -> playerLine player <$> getLine
 	wallCount <- read <$> getLine
-	(Board e' _ w') <- foldM addW b [1..wallCount]
-	return (Board e' players' w') where
+	(Board e' _ w' _) <- foldM addW b [1..wallCount]
+	return (Board e' players' w' (t+1)) where
 		addW board _ = do
 			k <- words <$> getLine
 			let w = Wall ((1+) $ read $ k !! 0, (1+) $ read $ k !! 1) (read $ k !! 2)
@@ -146,14 +146,14 @@ playerLine player str =
 	let k = map read . words $ str in Player (k !! 2) ((1+) $ k !! 0, (1+) $ k !! 1) (goals player) where
 
 runBoardBFS :: Int -> Board -> Branch
-runBoardBFS myId (Board e p _) =
+runBoardBFS myId (Board e p _ _) =
 	reverse $ runBFS $ BFS (getChildren e) (goals (p !! myId)) Set.empty [[coords $ p !! myId]] where
 		getChildren e c = checkIn (Map.lookup c e) where
 			checkIn Nothing = Set.empty
 			checkIn (Just a) = a
 
 findAllShortest :: Board -> [(Int, Branch)]
-findAllShortest b@(Board _ p _) = filterOut $ map (\x -> (x, runBoardBFS x b)) [0..(length p)-1] where
+findAllShortest b@(Board _ p _ _) = filterOut $ map (\x -> (x, runBoardBFS x b)) [0..(length p)-1] where
 	filterOut = filter (not . null . snd)
 
 getDirTo (x1, y1) (x2, y2)
@@ -175,7 +175,7 @@ findInhibitingWalls board myId = concatMap allWalls where
 	allWalls (id, branch) = if' [] (findWallableInPath board branch) (id == myId)
 
 findWallableInPath :: Board -> Branch -> [Wall]
-findWallableInPath board@(Board _ _ walls) branch =
+findWallableInPath board@(Board _ _ walls _) branch =
 	foldl' alongThePath [] (zip branch (tail branch)) where
 		alongThePath ws (x, xs) =
 			let w = createWall x xs;
@@ -206,17 +206,18 @@ getBestWall b mid l ws = let first = head ws in
 		evaluateWall p@(maxScore, _) wall = let score = rankWall b mid l wall in
 			if' (score, wall) p (score >= maxScore)
 
-takeTurn :: Int -> Board -> IO ()
+takeTurn :: Int -> Board -> IO Board
 takeTurn myId board = do
-	board'@(Board _ p' _) <- turnInput board
+	board'@(Board _ p' _ _) <- turnInput board
 	let shortestPaths = findAllShortest board'
 	let move = head . tail . fromJust $ lookup myId shortestPaths
 	let me = p' !! myId
 	if playerIsLosing myId shortestPaths && wallCount me > 0
 		then placeWall myId board' shortestPaths me move
 		else putStrLn . show $ coords me `getDirTo` move
+	return board'
 	where
-		placeWall myId b@(Board _ p w) sp me move = do
+		placeWall myId b@(Board _ p w t) sp me move = do
 			let (id, winnerM) = minimumBy (comparing $ rankPlayer myId) sp
 			hPrint stderr . Set.size $ w
 			let k = findInhibitingWalls b myId sp
@@ -226,7 +227,7 @@ takeTurn myId board = do
 					let (r, (Wall c o)) = getBestWall b myId sp k
 					let (x, y) = moveDir UP . moveDir LEFT $ c
 					hPutStrLn stderr $ "Rank for next move: " ++ (show r)
-					if r > if' 0 1 (length (players board) <= 2)
+					if r + (t-3) > if' 0 1 (length (players board) <= 2) && t > 5
 						then printf "%d %d %s %s\n" x y (show o) "Die!"
 						else putStrLn . show $ coords me `getDirTo` move
 
@@ -235,4 +236,4 @@ main = do
 	hSetBuffering stderr NoBuffering
 	(width, height, pC, myId) <- initialize
 	let board = newBoard (replicate pC $ (0, 0))
-	forever (takeTurn myId board)
+	foldM_ (const . (takeTurn myId)) board [1..]
