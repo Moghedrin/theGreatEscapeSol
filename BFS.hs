@@ -194,7 +194,8 @@ findWallableInPath board@(Board _ _ walls) branch =
 						canPlaceWall wall walls = Set.member wall walls && goalsStillReachable (addWall board wall)
 
 playerFactor :: Board -> Int -> (Int, Branch) -> Wall -> Int
-playerFactor board myId (i, sp) wall = if' (negate) (id) (myId == i) $ length (runBoardBFS i board) - (length sp)
+playerFactor board myId (i, sp) wall =
+	if' negate id (myId == i) $ length (runBoardBFS i (addWall board wall)) - (length sp)
 
 rankWall :: Board -> Int -> [(Int, Branch)] -> Wall -> Int
 rankWall board myId l w = foldl' (\x y -> x + (playerFactor board myId y w)) 0 l
@@ -224,9 +225,12 @@ takeTurn myId board = do
 			if null k || myId == id
 				then putStrLn . show $ coords me `getDirTo` move
 				else do
-					let (Wall c o) = snd . getBestWall board myId sp $ k
+					let (r, (Wall c o)) = getBestWall b myId sp k
 					let (x, y) = moveDir UP . moveDir LEFT $ c
-					printf "%d %d %s %s\n" x y (show o) "Die!"
+					hPutStrLn stderr $ "Rank for next move: " ++ (show r)
+					if r > 0
+						then printf "%d %d %s %s\n" x y (show o) "Die!"
+						else putStrLn . show $ coords me `getDirTo` move
 
 main = do
 	hSetBuffering stdout NoBuffering
