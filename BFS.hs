@@ -206,8 +206,6 @@ getBestWall b mid l ws = let first = head ws in
 		evaluateWall p@(maxScore, _) wall = let score = rankWall b mid l wall in
 			if' (score, wall) p (score >= maxScore)
 
--- #TODO Fix issue where if a player dies in 3 player, the agent no longer places walls if it's behind
-
 takeTurn :: Int -> Board -> IO ()
 takeTurn myId board = do
 	board'@(Board _ p' _) <- turnInput board
@@ -228,7 +226,7 @@ takeTurn myId board = do
 					let (r, (Wall c o)) = getBestWall b myId sp k
 					let (x, y) = moveDir UP . moveDir LEFT $ c
 					hPutStrLn stderr $ "Rank for next move: " ++ (show r)
-					if r > 0
+					if r > if' 0 2 (length (players board) <= 2)
 						then printf "%d %d %s %s\n" x y (show o) "Die!"
 						else putStrLn . show $ coords me `getDirTo` move
 
