@@ -71,7 +71,7 @@ intToCoord :: Int -> Coord
 intToCoord a = ((a `mod` 9) + 1, (a `div` 9) + 1)
 
 constructGraph :: EdgeTree -> Graph.Graph
-constructGraph e = Graph.buildG (-100, 100) $ concat $ map expandSet $ Map.toList $ e where
+constructGraph e = Graph.buildG (-100, 100) $ concatMap expandSet $ Map.toList $ e where
 	expandSet (k, v) = let z = Set.toList v in
 		[(coordToInt k, coordToInt e) | e <- z] ++ [(coordToInt e, coordToInt k) | e <- z]
 
@@ -153,7 +153,7 @@ runBoardBFS myId (Board e p _) =
 			checkIn (Just a) = a
 
 findAllShortest :: Board -> [(Int, Branch)]
-findAllShortest b@(Board _ p _) = filterOut $ map (\x -> (x, flip runBoardBFS b x)) [0..(length p)-1] where
+findAllShortest b@(Board _ p _) = filterOut $ map (\x -> (x, runBoardBFS x b)) [0..(length p)-1] where
 	filterOut = filter (not . null . snd)
 
 getDirTo (x1, y1) (x2, y2)
@@ -163,37 +163,47 @@ getDirTo (x1, y1) (x2, y2)
 	| y1 - y2 == (-1) = DOWN
 	| otherwise = undefined
 
-losing :: Int -> [(Int, Branch)] -> Bool
-losing myId branches = let winningPlayer = fst . findWinning $ branches in winningPlayer /= myId where
-	findWinning (b:bs) = foldl' (\a b -> if' a b (rank myId a < rank myId b)) b bs
+playerIsLosing :: Int -> [(Int, Branch)] -> Bool
+playerIsLosing myId branches = let winningPlayer = fst . findWinning $ branches in winningPlayer /= myId where
+	findWinning (b:bs) = foldl' (\a b -> if' a b (rankPlayer myId a < rankPlayer myId b)) b bs
 
-rank :: Int -> (Int, Branch) -> Int
-rank myId (id, b) = length b
+rankPlayer :: Int -> (Int, Branch) -> Int
+rankPlayer myId (id, b) = length b
 
--- #TODO Disallow walls which would block the path of a player
--- Use Data.Graph.bcc to check this. Edges existing in Forest are fine to delete.
+findInhibitingWalls :: Board -> Int -> [(Int, Branch)] -> [Wall]
+findInhibitingWalls board myId = concatMap allWalls where
+	allWalls (id, branch) = if' [] (findWallableInPath board branch) (id == myId)
 
-findWallableAlongPath :: Board -> Branch -> Maybe Wall
-findWallableAlongPath board@(Board _ _ walls) branch =
-	alongThePath branch where
-		alongThePath [] = Nothing
-		alongThePath (_:[]) = Nothing
-		alongThePath (x:(xs:xss)) =
+findWallableInPath :: Board -> Branch -> [Wall]
+findWallableInPath board@(Board _ _ walls) branch =
+	foldl' alongThePath [] (zip branch (tail branch)) where
+		alongThePath ws (x, xs) =
 			let w = createWall x xs;
 				placeW = canPlaceWall w walls;
 				w' = primeWall w;
-				placeW' = canPlaceWall w' walls in
-					if placeW
-						then (Just w)
-						else if' (Just w') (alongThePath (xs:xss)) placeW' where
-					primeWall (Wall c V) = Wall (moveDir UP c) V
-					primeWall (Wall c H) = Wall (moveDir LEFT c) H
-					createWall a b
-						| a `getDirTo` b == UP = Wall a H
-						| a `getDirTo` b == DOWN = Wall b H
-						| a `getDirTo` b == LEFT = Wall a V
-						| a `getDirTo` b == RIGHT = Wall b V
-					canPlaceWall wall walls = Set.member wall walls && goalsStillReachable (addWall board wall)
+				placeW' = canPlaceWall w' walls;
+				ws' = if' (w:ws) ws placeW in
+					if' (w':ws') ws' placeW' where
+						primeWall (Wall c V) = Wall (moveDir UP c) V
+						primeWall (Wall c H) = Wall (moveDir LEFT c) H
+						createWall a b
+							| a `getDirTo` b == UP = Wall a H
+							| a `getDirTo` b == DOWN = Wall b H
+							| a `getDirTo` b == LEFT = Wall a V
+							| a `getDirTo` b == RIGHT = Wall b V
+						canPlaceWall wall walls = Set.member wall walls && goalsStillReachable (addWall board wall)
+
+playerFactor :: Board -> Int -> (Int, Branch) -> Wall -> Int
+playerFactor board myId (i, sp) wall = if' (negate) (id) (myId == i) $ length (runBoardBFS i board) - (length sp)
+
+rankWall :: Board -> Int -> [(Int, Branch)] -> Wall -> Int
+rankWall board myId l w = foldl' (\x y -> x + (playerFactor board myId y w)) 0 l
+
+getBestWall :: Board -> Int -> [(Int, Branch)] -> [Wall] -> (Int, Wall)
+getBestWall b mid l ws = let first = head ws in
+	foldl' evaluateWall (rankWall b mid l first, first) ws where
+		evaluateWall p@(maxScore, _) wall = let score = rankWall b mid l wall in
+			if' (score, wall) p (score >= maxScore)
 
 takeTurn :: Int -> Board -> IO ()
 takeTurn myId board = do
@@ -201,18 +211,18 @@ takeTurn myId board = do
 	let shortestPaths = findAllShortest board'
 	let move = head . tail . fromJust $ lookup myId shortestPaths
 	let me = p' !! myId
-	if losing myId shortestPaths && wallCount me > 0
+	if playerIsLosing myId shortestPaths && wallCount me > 0
 		then placeWall myId board' shortestPaths me move
 		else putStrLn . show $ coords me `getDirTo` move
 	where
 		placeWall myId b@(Board _ p w) sp me move = do
-			let (id, winnerM) = minimumBy (comparing $ rank myId) sp
+			let (id, winnerM) = minimumBy (comparing $ rankPlayer myId) sp
 			hPrint stderr . Set.size $ w
-			let k = findWallableAlongPath b winnerM
-			if isNothing k || myId == id
+			let k = findInhibitingWalls b myId sp
+			if null k || myId == id
 				then putStrLn . show $ coords me `getDirTo` move
 				else do
-					let (Wall c o) = fromJust k
+					let (Wall c o) = snd . getBestWall board myId sp $ k
 					let (x, y) = moveDir UP . moveDir LEFT $ c
 					printf "%d %d %s %s\n" x y (show o) "Die!"
 
