@@ -1,8 +1,10 @@
+{-# LANGUAGE BangPatterns #-}
 import Control.Applicative
 import Control.Monad
 import Data.List (foldl', break, minimumBy, maximumBy)
 import Data.Maybe
 import Data.Monoid
+import Debug.Trace
 import Data.Ord (comparing)
 import System.IO
 import Text.Printf
@@ -193,18 +195,20 @@ findWallableInPath board@(Board _ _ walls _) branch =
 							| a `getDirTo` b == RIGHT = Wall b V
 						canPlaceWall wall walls = Set.member wall walls && goalsStillReachable (addWall board wall)
 
-playerFactor :: Board -> Int -> (Int, Branch) -> Wall -> Int
-playerFactor board myId (i, sp) wall =
-	if' negate id (myId == i) $ length (runBoardBFS i (addWall board wall)) - (length sp)
+playerFactor :: Board -> (Int, Branch) -> (Int, Branch) -> Wall -> Int
+playerFactor board (myId, myPath) (i, sp) wall =
+	traceShow (i, offputability, playerAhead, offputability + playerAhead) $ offputability + playerAhead where
+		offputability = if' negate id (myId == i) $ length (runBoardBFS i (addWall board wall)) - (length sp)
+		playerAhead = let myLength = length myPath; oppLength = length sp in myLength - oppLength
 
 rankWall :: Board -> Int -> [(Int, Branch)] -> Wall -> Int
-rankWall board myId l w = foldl' (\x y -> x + (playerFactor board myId y w)) 0 l
+rankWall board myId l w = foldl' (\x y -> x + (playerFactor board (l !! myId) y w)) 0 l
 
 getBestWall :: Board -> Int -> [(Int, Branch)] -> [Wall] -> (Int, Wall)
 getBestWall b mid l ws = let first = head ws in
 	foldl' evaluateWall (rankWall b mid l first, first) ws where
 		evaluateWall p@(maxScore, _) wall = let score = rankWall b mid l wall in
-			if' (score, wall) p (score >= maxScore)
+			if' (score, wall) p (score > maxScore)
 
 takeTurn :: Int -> Board -> IO Board
 takeTurn myId board = do
@@ -219,15 +223,14 @@ takeTurn myId board = do
 	where
 		placeWall myId b@(Board _ p w t) sp me move = do
 			let (id, winnerM) = minimumBy (comparing $ rankPlayer myId) sp
-			hPrint stderr . Set.size $ w
 			let k = findInhibitingWalls b myId sp
 			if null k || myId == id
 				then putStrLn . show $ coords me `getDirTo` move
 				else do
-					let (r, (Wall c o)) = getBestWall b myId sp k
+					let !(r, (Wall c o)) = getBestWall b myId sp k
 					let (x, y) = moveDir UP . moveDir LEFT $ c
 					hPutStrLn stderr $ "Rank for next move: " ++ (show r)
-					if r + (t-3) > if' 0 1 (length (players board) <= 2) && t > 5
+					if r > if' 0 1 (length (players board) <= 2) && t > 5
 						then printf "%d %d %s %s\n" x y (show o) "Die!"
 						else putStrLn . show $ coords me `getDirTo` move
 
